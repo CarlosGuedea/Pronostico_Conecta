@@ -1,0 +1,31 @@
+###
+### A Prefect Deployment for flow 'pipeline_ventas'
+###
+name: pipeline_ventas_semanal
+description: "Pipeline completo de extracción, procesamiento y predicción de ventas ejecutado cada domingo a las 7:00 AM"
+version: 1
+tags: ["ventas", "forecast", "automatizado"]
+flow_name: pipeline_ventas
+entrypoint: pipeline_prefect.py:pipeline_ventas
+
+# ========================
+# CONFIGURACIÓN DE SCHEDULE
+# ========================
+schedule:
+  cron: "0 7 * * 0"   # Domingos a las 7:00 AM (hora del servidor)
+  timezone: "America/Mexico_City"
+
+# ========================
+# CONFIGURACIÓN DEL ENTORNO
+# ========================
+work_pool:
+  name: "default"
+  work_queue_name: "default"
+  job_variables: {}
+
+# ========================
+# OPCIONES ADICIONALES
+# ========================
+parameters: {}
+infra_overrides: {}
+pull_steps: []
