@@ -97,16 +97,6 @@ def predecir_fourier_single_task(comb, df_ventas_grouped, df_restricciones):
     segmentacion = sub_df["SEGMENTACION"].iloc[0] if "SEGMENTACION" in sub_df.columns else None
     cluster = sub_df["VAR_CAT_Cluster"].iloc[0] if "VAR_CAT_Cluster" in sub_df.columns else None
     
-    # --- Promedios máximos por segmento (+30%) ---
-    promedio_segmento = {
-        "micro": 74 * 1.3,
-        "chico": 157 * 1.3,
-        "mediano": 325 * 1.3,
-        "grande": 513 * 1.3,
-        "extragrande": 995 * 1.3
-    }
-    limite_segmento = promedio_segmento.get(str(segmentacion).lower(), 200)  # default
-    
     # --- Fourier model ---
     n_periods = 26
     t = (sub_df["inicio_semana"] - sub_df["inicio_semana"].min()).dt.days / 7
@@ -134,14 +124,7 @@ def predecir_fourier_single_task(comb, df_ventas_grouped, df_restricciones):
     max_hist_sales = y.max()
     min_limit = max_hist_sales * 0.10
     max_limit = max_hist_sales * 0.90
-    
     y_forecast_ajustado = np.clip(y_forecast_ajustado, min_limit, max_limit)
-    
-    # --- Ajustar según el límite de segmento ---
-    if y_forecast_ajustado.mean() > limite_segmento:
-        # Reescala proporcionalmente para que el promedio no supere el límite
-        factor = limite_segmento / y_forecast_ajustado.mean()
-        y_forecast_ajustado *= factor
     
     # --- Aplicar restricciones de producto ---
     y_forecast_ajustado = aplicar_restricciones_vectorizada(
@@ -173,7 +156,8 @@ def predecir_fourier_single_task(comb, df_ventas_grouped, df_restricciones):
         "ds": fechas_fut, 
         "y_pred": y_forecast_ajustado,
         "CLIENTE_ID_KEY": cliente_id,
-        "PRODUCTO_ID_KEY": producto_id
+        "PRODUCTO_ID_KEY": producto_id,
+        "SEGMENTACION": segmentacion
     })
     
     return [df_hist, df_fut]
@@ -197,12 +181,8 @@ def main():
         ARCHIVO_RESTRICCIONES,
         usecols=['PRODUCTO_ID_KEY', 'SEGMENTACION', 'MINIMO_VENTA', 'MULTIPLO_VENTA']
     )
-    df_restricciones["MINIMO_VENTA"] = pd.to_numeric(
-        df_restricciones.get("MINIMO_VENTA", pd.Series()), errors='coerce'
-    ).fillna(0)
-    df_restricciones["MULTIPLO_VENTA"] = pd.to_numeric(
-        df_restricciones.get("MULTIPLO_VENTA", pd.Series()), errors='coerce'
-    ).fillna(1)
+    df_restricciones["MINIMO_VENTA"] = pd.to_numeric(df_restricciones.get("MINIMO_VENTA", pd.Series()), errors='coerce').fillna(0)
+    df_restricciones["MULTIPLO_VENTA"] = pd.to_numeric(df_restricciones.get("MULTIPLO_VENTA", pd.Series()), errors='coerce').fillna(1)
     
     print("Calculando probabilidades de venta...")
     sys.stdout.flush() 
@@ -276,14 +256,13 @@ def main():
 
     combinaciones_filtradas = (
         combinaciones_filtradas.groupby("CLIENTE_ID_KEY", group_keys=False)
-        .apply(lambda x: x.head(int(x["MAX_COMB"].iloc[0])))
-        .reset_index(drop=True)
+        .apply(lambda x: x.head(int(x["MAX_COMB"].iloc[0]))).reset_index(drop=True)
     )
 
     print(f"Total de combinaciones después del filtrado por tamaño (SEGMENTACION): {len(combinaciones_filtradas)}")
 
-    df_ventas["comb"] = (df_ventas["CLIENTE_ID_KEY"].astype(str) + "_" + df_ventas["PRODUCTO_ID_KEY"].astype(str))
-    combinaciones_filtradas["comb"] = (combinaciones_filtradas["CLIENTE_ID_KEY"].astype(str) + "_" + combinaciones_filtradas["PRODUCTO_ID_KEY"].astype(str))
+    df_ventas["comb"] = df_ventas["CLIENTE_ID_KEY"].astype(str) + "_" + df_ventas["PRODUCTO_ID_KEY"].astype(str)
+    combinaciones_filtradas["comb"] = combinaciones_filtradas["CLIENTE_ID_KEY"].astype(str) + "_" + combinaciones_filtradas["PRODUCTO_ID_KEY"].astype(str)
     
     print(f"Total de combinaciones a predecir: {len(combinaciones_filtradas)}")
     sys.stdout.flush() 
@@ -300,12 +279,40 @@ def main():
             
     if resultados:
         df_result = pd.concat(resultados, ignore_index=True)
-        df_result = df_result[["CLIENTE_ID_KEY", "PRODUCTO_ID_KEY", "ds", "y_pred"]]
+        df_result = df_result[["CLIENTE_ID_KEY", "PRODUCTO_ID_KEY", "ds", "y_pred", "SEGMENTACION"]]
         df_result.rename(columns={"ds": "FECHA_PREDICCION", "y_pred": "PREDICCION"}, inplace=True)
         
         df_result['PREDICCION'] = np.maximum(0, df_result['PREDICCION'])
         df_result['PREDICCION'] = np.round(df_result['PREDICCION'])
 
+        # =======================================================
+        # 🔧 AJUSTE POR TOTAL SEMANAL POR CLIENTE
+        # =======================================================
+        print("\nAplicando ajuste por total semanal por cliente...")
+        limites_segmentacion = {
+            "micro": 74 * 1.3,
+            "chico": 157 * 1.3,
+            "mediano": 325 * 1.3,
+            "grande": 513 * 1.3,
+            "extragrande": 995 * 1.3
+        }
+
+        ajustados = 0
+        for cid, sub in df_result.groupby('CLIENTE_ID_KEY'):
+            seg = str(sub['SEGMENTACION'].iloc[0]).lower() if pd.notna(sub['SEGMENTACION'].iloc[0]) else 'micro'
+            limite = limites_segmentacion.get(seg, 200)
+            promedio_total = sub.groupby('FECHA_PREDICCION')['PREDICCION'].sum().mean()
+
+            if promedio_total > limite:
+                factor = limite / promedio_total
+                df_result.loc[sub.index, 'PREDICCION'] = np.round(sub['PREDICCION'] * factor)
+                ajustados += 1
+
+        print(f"Clientes ajustados: {ajustados}")
+
+        # =======================================================
+        # Ajuste global del 80% del total histórico
+        # =======================================================
         total_real = df_ventas['VAR_NUM_PiezasVendidas'].sum()
         objetivo = int(total_real * 0.8)
         total_predicho = df_result['PREDICCION'].sum()
