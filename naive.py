@@ -97,8 +97,18 @@ def predecir_fourier_single_task(comb, df_ventas_grouped, df_restricciones):
     segmentacion = sub_df["SEGMENTACION"].iloc[0] if "SEGMENTACION" in sub_df.columns else None
     cluster = sub_df["VAR_CAT_Cluster"].iloc[0] if "VAR_CAT_Cluster" in sub_df.columns else None
     
-    n_periods = 26
+    # --- Promedios máximos por segmento (+30%) ---
+    promedio_segmento = {
+        "micro": 74 * 1.3,
+        "chico": 157 * 1.3,
+        "mediano": 325 * 1.3,
+        "grande": 513 * 1.3,
+        "extragrande": 995 * 1.3
+    }
+    limite_segmento = promedio_segmento.get(str(segmentacion).lower(), 200)  # default
     
+    # --- Fourier model ---
+    n_periods = 26
     t = (sub_df["inicio_semana"] - sub_df["inicio_semana"].min()).dt.days / 7
     y = sub_df["VAR_NUM_PiezasVendidas"].values
     
@@ -112,21 +122,33 @@ def predecir_fourier_single_task(comb, df_ventas_grouped, df_restricciones):
 
     y_hist_final = y_fourier_all[t.astype(int)] * 0.8 + y * 0.2
     
+    # --- Predicción futura ---
     t_forecast = np.arange(t.iloc[-1] + 1, t.iloc[-1] + 1 + n_periods)
     X_forecast = fourier_features(t_forecast, max_features=50)
     y_forecast_final = model.predict(X_forecast)
-
+    
+    # --- Ajuste base ---
     y_forecast_ajustado = y_forecast_final * 0.8 + y.mean() * 0.2
     
+    # --- Limitar valores dentro del rango histórico ---
     max_hist_sales = y.max()
     min_limit = max_hist_sales * 0.10
     max_limit = max_hist_sales * 0.90
+    
     y_forecast_ajustado = np.clip(y_forecast_ajustado, min_limit, max_limit)
-
+    
+    # --- Ajustar según el límite de segmento ---
+    if y_forecast_ajustado.mean() > limite_segmento:
+        # Reescala proporcionalmente para que el promedio no supere el límite
+        factor = limite_segmento / y_forecast_ajustado.mean()
+        y_forecast_ajustado *= factor
+    
+    # --- Aplicar restricciones de producto ---
     y_forecast_ajustado = aplicar_restricciones_vectorizada(
         y_forecast_ajustado, producto_id, segmentacion, cluster, df_restricciones
     )
     
+    # --- Fechas de salida ---
     fechas_all = pd.date_range(
         start=sub_df["inicio_semana"].min(), 
         periods=len(t_all), 

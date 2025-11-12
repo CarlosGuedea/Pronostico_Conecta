@@ -41,10 +41,10 @@ def etapa_7_filtrar_rutas():
 @flow(name="pipeline_ventas_completo")
 def pipeline_ventas():
     # Flujo secuencial
-    #etapa_1_extraer_datos()
-    #etapa_2_agrupar_por_semana()
-    #etapa_3_unir_cluster()
-    #etapa_4_prediccion_fourier()
+    etapa_1_extraer_datos()
+    etapa_2_agrupar_por_semana()
+    etapa_3_unir_cluster()
+    etapa_4_prediccion_fourier()
     etapa_5_filtrar_semana()
     etapa_6_postprocesar()
     etapa_7_filtrar_rutas()

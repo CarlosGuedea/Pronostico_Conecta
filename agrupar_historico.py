@@ -17,7 +17,7 @@ except UnicodeDecodeError:
     lector = pd.read_csv(archivo, encoding='ISO-8859-1', low_memory=False, chunksize=chunksize)
 
 for i, chunk in enumerate(lector):
-    print(f"🔹 Procesando bloque {i + 1}...")
+    print(f" Procesando bloque {i + 1}...")
 
     # Convertir FECHA_PEDIDO a datetime
     chunk['FECHA_PEDIDO'] = pd.to_datetime(chunk['FECHA_PEDIDO'], format='%Y-%m-%d', errors='coerce')
@@ -43,8 +43,8 @@ for i, chunk in enumerate(lector):
     encabezado = not os.path.exists(salida_parcial)
     agrupado.to_csv(salida_parcial, mode=modo, index=False, header=encabezado, encoding='utf-8-sig')
 
-print("✅ Procesamiento por bloques terminado.")
-print("🔄 Reagrupando resultados parciales...")
+print(" Procesamiento por bloques terminado.")
+print(" Reagrupando resultados parciales...")
 
 # --- Segunda fase: reagrupar el archivo reducido ---
 df = pd.read_csv(salida_parcial, encoding='utf-8-sig', low_memory=False)
@@ -64,4 +64,4 @@ df_final.to_csv(salida_final, index=False, encoding='utf-8-sig')
 # Limpiar archivo temporal si deseas
 os.remove(salida_parcial)
 
-print(f"✅ Archivo '{salida_final}' generado con éxito ({len(df_final):,} filas).")
+print(f" Archivo '{salida_final}' generado con éxito ({len(df_final):,} filas).")
