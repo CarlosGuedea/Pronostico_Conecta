@@ -202,7 +202,7 @@ def main():
         ventas_2m=('VAR_NUM_PiezasVendidas', lambda x: x[mask_2m].sum())
     ).reset_index()
 
-    ventas_prob = ventas_prob[ventas_prob['ventas_totales'] > 150]
+    #ventas_prob = ventas_prob[ventas_prob['ventas_totales'] > 150]
     ventas_prob['ventas_2m'] = ventas_prob['ventas_2m'].fillna(0)
     ventas_prob['meses_con_ventas'] = ventas_prob['meses_con_ventas'].fillna(0).astype(int)
 
